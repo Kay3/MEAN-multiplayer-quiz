@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.2/jquery.mobile-1.4.2.min.css">
+<script src="https://code.jquery.com/jquery-1.10.2.min.js"></script>
+<script src="https://code.jquery.com/mobile/1.4.2/jquery.mobile-1.4.2.min.js"></script>
+
+<link href="/main.css"rel="stylesheet"type="text/css"/>
+<script src="/jquery.js"></script>
+</head>
+<body>
+
+<div data-role="page" id="userFormPage">
+  <div data-role="header">
+    <h1>CrickQuiz</h1>
+  </div>
+
+  <div data-role="main" class="ui-content">
+<div id="userWrap">
+	<h1>Love cricket ? Check this out!</h1>
+	<form id="unameForm">
+		<input type="submit" value="LOGIN"></input>
+	</form>
+</div>
+  </div>
+</div> 
+ <!------------------------------------>
+<div data-role="page" id="challengePage">
+  <div data-role="header">
+    <h1>CrickQuiz</h1>
+  </div>
+
+  <div data-role="main" class="ui-content">
+<div id="users"><button id="challenge">CHALLENGE</button></div>
+</div> 
+
+</div> 
+
+ <!------------------------------------>
+ 
+ <div data-role="page" data-dialog="true" id="challengeRaise">
+  <div data-role="header">
+    <h1>Wanna Challenge Me ?</h1>
+  </div>
+
+  <div data-role="main" class="ui-content">
+  	<div id="challengeText"></div>
+  </div>
+
+  <div data-role="footer">
+    <h1>Footer Text In Dialog</h1>
+  </div>
+</div> 
+ 
+ 
+  <!------------------------------------>
+<div data-role="page" id="gamePage">
+  <div data-role="header">
+    <h1>CrickQuiz</h1>
+  </div>
+
+  <div data-role="main" class="ui-content">
+<div id = "scoreboard">
+<div id="playerScores"></div>
+</div>
+<p id = "start"></p>
+<div id="myPopup"></div>
+<div id="contentWrap">
+		<div class="spacer"></div>
+		<div id="navContent">
+			<div id="timerCount"></div>
+			<div id="game1"></div>
+			<div id="game2"></div>
+		</div>
+</div>
+</div>
+</div> 
+
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+	<script src="https://code.jquery.com/jquery-latest.min.js"></script>
+	<script src="/socket.io/socket.io.js"></script>
+	
+	<script src="https://cdn.auth0.com/js/lock-8.1.1.js"></script>
+	<script src="http://code.jquery.com/jquery-1.11.3.js"></script>
+	
+	<script>
+
+		jQuery(function($){
+		
+			var socket = io.connect(); 
+			
+			var $users = $('#users'); 
+			var $uname = $('#uname');
+			var $unameForm = $('#unameForm');
+			var $option = $('.option');
+			var $challenge = $("#challenge");
+
+			var stage="#game1";
+			var stage2=new Object;
+			var questionLock=false;
+			var score=0;
+			var numberOfQuestions = 3;
+			
+			var playerData = {};
+			var mySessionID;
+			
+//LOGIN FB
+
+       var userProfile;
+        var userToken;
+        var AUTH0_DOMAIN = "kay3prabhu.auth0.com";
+        var AUTH0_CLIENT_ID= "MQfFzb9Fe8SHb985tWDsqk82MLvU6aUN";
+        
+        var lock = new Auth0Lock('MQfFzb9Fe8SHb985tWDsqk82MLvU6aUN', 'kay3prabhu.auth0.com');
+        var hash = lock.parseHash();
+    	/* $('#chat').hide();
+        $('#login button').click(function (e) {
+            e.preventDefault();
+            lock.show();
+        });*/
+			$unameForm.submit(function(e){
+				e.preventDefault();
+				console.log('Inside press Play / Login Button');
+				lock.show();
+				
+			//	socket.emit('new user',$uname.val());
+			//	$uname.val('');
+			//	$(location).attr('href',"#challengePage");
+			});
+			
+        if (hash) {
+        	console.log("Inside Hash");
+            if (hash.error) {
+                console.log("There was an error logging in", hash.error);
+            }
+            else {
+            	console.log("Inside ELSE Hash");
+                lock.getProfile(hash.id_token, function (err, profile) {
+                    if (err) {
+                        console.log('Cannot get user', err);
+                        return;
+                    }
+                    console.log('connected and authenticated');
+                    userProfile = profile;
+                    localStorage.setItem('userToken', hash.id_token);
+                    userToken = hash.id_token;
+                    openChat();
+
+                });
+            }
+        }
+        
+                function openChat() {
+                socket.on('authenticated', function () {
+                  socket.emit('new user',userProfile);
+                    $uname.val('');
+                    $(location).attr('href',"#challengePage");	
+            }).emit('authenticate', {token: userToken}); // send the jwt
+          //  })
+        };
+
+			socket.on('available players',function(data){    // we receive userdata object from server
+				console.log("CLIENT DISPLAY: available players");
+				var html ='';
+				 
+				html += "<p>Users Available to Challenge</p><br>";
+				//for(key in data){
+				for(var i=0; i<data.length; i++){
+						//html += data[i] + '<button id="challenge" value="'+ data[i]+'">CHALLENGE</button><br/>';	
+						html += '<button id="challenge"  class="ui-btn" value="' + data[i].user_id+ '">' + data[i].name + '</button>';			
+				}
+				$('#users').html(html);
+			});
+			
+			socket.on('welcome screen',function(data){					// Sent from server once a new game starts with 2 player details
+				playerData = jQuery.extend(true, {}, data);
+				displayScore();
+				$('#scoreboard').show();
+			});
+
+			
+			 $('#users').on('click', "button", function(e) {		// we receive user_id from button click
+				e.preventDefault();
+				var challengedUser = $(this).val();
+				console.log("INSISDE challenge click : %s",challengedUser);
+				//socket.emit('new game',challengedUser);
+				socket.emit('challenge',challengedUser);
+
+			});
+			socket.on('challenge raised',function(data){    // we receive userdata object from server
+				var html = '';
+				html += '<p>' + data.name +' wants to play with you !</p>';
+				html += '<button id="ok" value ="' + data.user_id +'" >Yes</button>';
+				html += '<button id="ok" value ="no" >No</button>';
+				$('#challengeText').html(html);
+				console.log("INSISDE challenge raised ");
+				$(location).attr('href',"#challengeRaise");
+			});
+			
+			$('#challengeRaise').on('click', "button", function(e) {		// we receive user_id from button click
+				e.preventDefault();
+				var challengedUser = $(this).val();
+				console.log("INSISDE challengeRaise click : %s",challengedUser);
+				socket.emit('new game',challengedUser);
+
+			});
+			
+			socket.on('newQuesData',function(data){
+			/*
+				var quesData = {
+					round: i,
+					question : questionBank[i][0],   // Displayed Word
+					answerIndex : answerIndex, // Correct Answer Index
+					answer : answer,
+					options : answerArray      // Shuffled options
+				};
+			*/
+				console.log("CLIENT DISPLAY: newQuesData");
+				$("#game1").empty();
+				$('#timerCount').empty();
+				//playerData = data;
+				playerData = jQuery.extend(true, {}, data);
+				var numberOfOptions = data.quesData.options.length-1;
+				var answerArray = data.quesData.options;
+				var answerIndex = data.quesData.answerIndex;
+				var html = '';
+				
+				playerData.player1.clicked = 0;
+				playerData.player2.clicked = 0;
+				questionLock=false;
+				html += '<div class="questionText">' + data.quesData.question + '</div>' ;
+				for(i=0;i<answerArray.length;i++){
+					html += '<div id="' + [i+1] + '" class="option">' + answerArray[i] + '</div>';
+				}
+				triggerClick();
+
+				$("#game1").html(html);
+				displayScore();	
+				$(location).attr('href',"#gamePage");
+   
+			});	
+			
+			function triggerClick(){
+				console.log("INSISDE TRIGGER");
+				$('#start').trigger( "click" );
+			}
+			
+			$('#start').click(function(e) {
+				e.preventDefault();
+				socket.emit('start timer',playerData.gameId);
+				
+			});	
+			socket.on('show countdown',function(time){
+					console.log("CLIENT DISPLAY: show countdown");
+					$('#timerCount').text(time);
+					$('#timerCount').show();
+			});
+			 $('#navContent').on('click',"div.option", function(e) {
+			 		e.preventDefault();
+
+			 		var clickedTime = $('#timerCount').text();
+			 		
+			 		$('#navContent').off('change');
+					console.log("INSISDE CLICK OPTION JQUERY");
+					console.log($('#timerCount').text());
+					console.log(playerData);
+					var correctAnswer = playerData.quesData.answer;
+					var index = playerData.quesData.answerIndex;
+					var id = e.target.id;
+					
+					if(questionLock==false){
+						console.log("Inside questionLock==false");
+								questionLock=true;	
+								//correct answer
+								if(id == index){
+									console.log("INSISDE Correct Answer");
+									score = score + (clickedTime * 2);
+									updateScore(score);
+									$('#'+id).addClass("green");
+									socket.emit('update score',playerData);
+								}
+								//wrong answer	
+								else{
+									$('#'+index).addClass("green");
+									$('#'+id).addClass("red");
+									console.log("INSISDE wrong Answer");
+								}				
+					}
+					var mySessionID = socket.io.engine.id;
+					if(playerData.player1.socketID === mySessionID){
+					playerData.player1.clicked = 1;
+					socket.emit('update click',playerData);
+					}
+					else if(playerData.player2.socketID === mySessionID){
+					playerData.player2.clicked = 1;
+					socket.emit('update click',playerData);
+					}
+					
+			});
+			
+			socket.on('display score',function(data){
+					console.log("CLIENT DISPLAY: update score");
+					playerData = jQuery.extend(true, {}, data);
+					displayScore();
+			});
+			socket.on('store data',function(data){
+					console.log("CLIENT store data");
+					playerData = jQuery.extend(true, {}, data);
+			});
+			function updateScore(score){			
+				console.log("FUNCTION : updateScore");
+				var mySessionID = socket.io.engine.id;
+				if(playerData.player1.socketID === mySessionID){
+					playerData.player1.score = score;
+				}
+				else if(playerData.player2.socketID === mySessionID){
+					playerData.player2.score = score;
+				}
+				displayScore();
+			}
+
+
+			function displayScore(){
+					var html = '';
+					var result = highScore();
+					$("#playerScores").empty();
+					if(playerData.player1.score == playerData.player2.score){
+						html += '<div id="player1Score" class="playerScore"> <span class="scoreGreen"> <img src='+ playerData.player1.pic +' alt="player1" width="42" height="42">' + playerData.player1.score + '</span><span class="playerNameGreen">' + playerData.player1.name + '</span></div>' ;
+						html += '<div id="player2Score" class="playerScore"> <span class="playerNameGreen">' + playerData.player2.name + '</span><span class="scoreGreen">' + playerData.player2.score + '<img src='+ playerData.player2.pic +' alt="player1" width="42" height="42"></span></div>' ;
+					}
+					else if(playerData.player1.score > playerData.player2.score){
+						html += '<div id="player1Score" class="playerScore"> <span class="scoreGreen"> <img src='+ playerData.player1.pic +' alt="player1" width="42" height="42">' + playerData.player1.score + '</span><span class="playerNameGreen">' + playerData.player1.name + '</span></div>' ;
+						html += '<div id="player2Score" class="playerScore"> <span class="playerNameRed">' + playerData.player2.name + '</span><span class="scoreRed">' + playerData.player2.score + '<img src='+ playerData.player2.pic +' alt="player1" width="42" height="42"></span></div>' ;
+					}
+					else{
+						html += '<div id="player1Score" class="playerScore"> <span class="scoreRed"> <img src='+ playerData.player1.pic +' alt="player1" width="42" height="42">' + playerData.player1.score + '</span><span class="playerNameRed">' + playerData.player1.name + '</span></div>' ;
+						html += '<div id="player2Score" class="playerScore"> <span class="playerNameGreen">' + playerData.player2.name + '</span><span class="scoreGreen">' + playerData.player2.score + '<img src='+ playerData.player2.pic +' alt="player1" width="42" height="42"></span></div>' ;					
+					}
+					$('#playerScores').html(html);
+			}
+			
+			function highScore(){
+					var result;
+					var mySessionID = socket.io.engine.id;
+					if(playerData.player1.socketID === mySessionID){
+							if(playerData.player1.score > playerData.player2.score){
+								result = "You Win !";
+							}else{
+								result = "You Lose !";
+							}
+					}else if(playerData.player2.score > playerData.player1.score){
+						result = "You Win !";
+					}else{
+						result = "You Lose !";
+					}
+					if(playerData.player1.score === playerData.player2.score){
+							result = "Its a TIE !";
+					}
+					return result;
+			}
+			
+			function matchResults(){
+					var html='';
+					var result = highScore();
+					$("#game1").empty();
+					html += '<div class="gameOver">Game Over!' + result + '</div><button id="btnPlayerRestart" class="btn btnGameOver">Start Again</button>';
+					html += '</div><button id="availList" class="btn btnGameOver">Home</button>'
+					$('#game1').html(html);
+			}
+			
+			$('#game1').on('click', "button", function(e) {
+				e.preventDefault();
+				//var challengedUser = $(this).val();
+				//console.log("INSISDE challenge click : %s",challengedUser);
+				//socket.emit('new game',challengedUser);
+				
+			});	
+			
+			socket.on('final score',function(data){
+				playerData = jQuery.extend(true, {}, data);
+				console.log("//////////////////////////////////////////////////////////////////////////////////////////");
+				console.log(playerData);
+				console.log("//////////////////////////////////////////////////////////////////////////////////////////");
+				$('#timerCount').empty();
+				displayScore();
+				matchResults();
+				$(location).attr('href',"#gamePage");
+			});
+
+			
+			/*function displayFinalSlide(){
+				$(stage).append('<div class="questionText">You have finished the quiz!<br><br>Total questions: '+numberOfQuestions+'<br>Correct answers: '+score+'</div>');
+			}//display final slide*/
+
+		});
+
+
+	</script>
+</body>
+</html>
